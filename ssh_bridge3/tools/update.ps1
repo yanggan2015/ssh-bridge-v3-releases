@@ -23,11 +23,37 @@ $here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvoca
 if (-not $InstallDir) { $InstallDir = Join-Path $here '..' }
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 function Fail([string]$msg) {
     Write-Host "UPDATE: FAIL $msg" -ForegroundColor Red
     exit 1
+}
+
+function FetchText([string]$uri) {
+    for ($i = 1; $i -le 3; $i++) {
+        try {
+            return (Invoke-WebRequest -UseBasicParsing -Uri $uri -TimeoutSec 60).Content
+        } catch {
+            if ($i -eq 3) { throw }
+            Write-Host "UPDATE: retry manifest ($i/3): $($_.Exception.Message)"
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
+function FetchFile([string]$uri, [string]$outFile) {
+    for ($i = 1; $i -le 3; $i++) {
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $outFile -TimeoutSec 180
+            return
+        } catch {
+            if ($i -eq 3) { throw }
+            Write-Host "UPDATE: retry package ($i/3): $($_.Exception.Message)"
+            Start-Sleep -Seconds 2
+        }
+    }
 }
 
 function Get-VersionFile([string]$path) {
@@ -71,7 +97,7 @@ $isHttp = $Manifest -match '^https?://'
 $manifestDir = ''
 if ($isHttp) {
     try {
-        $text = (Invoke-WebRequest -UseBasicParsing -Uri $Manifest -TimeoutSec 20).Content
+        $text = FetchText $Manifest
     } catch { Fail "下载清单失败：$($_.Exception.Message)" }
 } else {
     if (-not (Test-Path -LiteralPath $Manifest)) { Fail "清单不存在：$Manifest" }
@@ -106,7 +132,7 @@ try {
         if ($zipUri.Scheme -notin @('http', 'https')) { Fail "不支持的下载协议：$($zipUri.Scheme)" }
         $zipPath = Join-Path $tmp 'package.zip'
         try {
-            Invoke-WebRequest -UseBasicParsing -Uri $zipUri.AbsoluteUri -OutFile $zipPath -TimeoutSec 120
+            FetchFile $zipUri.AbsoluteUri $zipPath
         } catch { Fail "下载更新包失败：$($_.Exception.Message)" }
     } else {
         $localZip = if ([System.IO.Path]::IsPathRooted($zipRef)) { $zipRef } else { Join-Path $manifestDir $zipRef }
@@ -116,8 +142,23 @@ try {
     }
 
     $wantZip = ([string]$m.sha256 -split '\s+')[0].ToUpperInvariant()
-    $gotZip = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToUpperInvariant()
-    if ($wantZip -ne $gotZip) { Fail "zip SHA-256 不匹配：期望 $wantZip 实际 $gotZip" }
+    $wantSize = if ($m.size_bytes) { [int64]$m.size_bytes } else { 0 }
+    $zipOk = $false
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        if ($attempt -gt 1 -and $zipUri) {
+            Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+            try { FetchFile $zipUri.AbsoluteUri $zipPath } catch { Fail "下载更新包失败：$($_.Exception.Message)" }
+        }
+        $gotSize = (Get-Item -LiteralPath $zipPath).Length
+        $gotZip = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToUpperInvariant()
+        if (($wantSize -eq 0 -or $gotSize -eq $wantSize) -and $wantZip -eq $gotZip) {
+            $zipOk = $true
+            break
+        }
+        Write-Host "UPDATE: zip integrity retry ($attempt/3) size=$gotSize expect=$wantSize sha=$gotZip"
+        Start-Sleep -Seconds 2
+    }
+    if (-not $zipOk) { Fail "zip SHA-256/大小校验失败：期望 $wantZip" }
     Write-Host 'UPDATE: OK zip-sha256'
 
     $stage = Join-Path $tmp 'stage'
