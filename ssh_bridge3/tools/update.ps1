@@ -86,12 +86,30 @@ function Compare-Ver([string]$a, [string]$b) {
     return 0
 }
 
+function Get-Sha256([string]$path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($path)
+    try {
+        $hash = $sha.ComputeHash($stream)
+        return ([System.BitConverter]::ToString($hash)).Replace('-', '').ToUpperInvariant()
+    } finally {
+        $stream.Dispose()
+        $sha.Dispose()
+    }
+}
+
 $install = (Resolve-Path -LiteralPath $InstallDir).Path
 $exePath = Join-Path $install 'ssh_bridge3.exe'
 if (-not (Test-Path -LiteralPath $exePath)) { Fail "安装目录缺少 ssh_bridge3.exe：$install" }
 $versionPath = Join-Path $install 'VERSION.txt'
 $localVersion = Get-VersionFile $versionPath
 Write-Host "UPDATE: install=$install current=$localVersion"
+$tracePath = Join-Path $install 'work\logs\update-trace.log'
+function Trace([string]$m) {
+    try { Add-Content -LiteralPath $tracePath -Value ("{0:o} {1}" -f (Get-Date), $m) -ErrorAction SilentlyContinue } catch { }
+}
+Trace "START pid=$PID host=$($PSVersionTable.PSVersion)"
+trap { Trace "TRAP $_"; exit 1 }
 
 $isHttp = $Manifest -match '^https?://'
 $manifestDir = ''
@@ -113,6 +131,7 @@ if (-not $m.version -or (-not $m.zip -and -not $m.url) -or -not $m.sha256) {
 
 $cmp = Compare-Ver $m.version $localVersion
 Write-Host "UPDATE: remote=$($m.version)"
+Trace "REMOTE=$($m.version) CMP=$cmp"
 if ($cmp -le 0) {
     Write-Host 'UPDATE: OK already-up-to-date' -ForegroundColor Green
     exit 0
@@ -131,9 +150,11 @@ try {
         $zipUri = if ($zipIsUrl) { [Uri]$zipRef } else { [Uri]::new([Uri]$Manifest, $zipRef) }
         if ($zipUri.Scheme -notin @('http', 'https')) { Fail "不支持的下载协议：$($zipUri.Scheme)" }
         $zipPath = Join-Path $tmp 'package.zip'
+        Trace "BEFORE_FETCH $($zipUri.AbsoluteUri)"
         try {
             FetchFile $zipUri.AbsoluteUri $zipPath
         } catch { Fail "下载更新包失败：$($_.Exception.Message)" }
+        Trace "AFTER_FETCH size=$((Get-Item -LiteralPath $zipPath).Length)"
     } else {
         $localZip = if ([System.IO.Path]::IsPathRooted($zipRef)) { $zipRef } else { Join-Path $manifestDir $zipRef }
         if (-not (Test-Path -LiteralPath $localZip)) { Fail "更新包不存在：$localZip" }
@@ -144,13 +165,14 @@ try {
     $wantZip = ([string]$m.sha256 -split '\s+')[0].ToUpperInvariant()
     $wantSize = if ($m.size_bytes) { [int64]$m.size_bytes } else { 0 }
     $zipOk = $false
+    Trace "ZIP_SHA_BEGIN want=$wantZip size=$wantSize"
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         if ($attempt -gt 1 -and $zipUri) {
             Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
             try { FetchFile $zipUri.AbsoluteUri $zipPath } catch { Fail "下载更新包失败：$($_.Exception.Message)" }
         }
         $gotSize = (Get-Item -LiteralPath $zipPath).Length
-        $gotZip = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToUpperInvariant()
+        $gotZip = Get-Sha256 $zipPath
         if (($wantSize -eq 0 -or $gotSize -eq $wantSize) -and $wantZip -eq $gotZip) {
             $zipOk = $true
             break
@@ -160,6 +182,7 @@ try {
     }
     if (-not $zipOk) { Fail "zip SHA-256/大小校验失败：期望 $wantZip" }
     Write-Host 'UPDATE: OK zip-sha256'
+    Trace 'ZIP_SHA_OK'
 
     $stage = Join-Path $tmp 'stage'
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
@@ -187,10 +210,11 @@ try {
     }
 
     $stagedExe = Join-Path $stage 'ssh_bridge3.exe'
+    Trace "EXTRACTED files=$((Get-ChildItem -LiteralPath $stage -Recurse -File).Count)"
     if (-not (Test-Path -LiteralPath $stagedExe)) { Fail '更新包缺少 ssh_bridge3.exe' }
     if (-not (Test-Path -LiteralPath (Join-Path $stage 'VERSION.txt'))) { Fail '更新包缺少 VERSION.txt' }
     if ($m.exe_sha256) {
-        $gotExe = (Get-FileHash -LiteralPath $stagedExe -Algorithm SHA256).Hash.ToUpperInvariant()
+        $gotExe = Get-Sha256 $stagedExe
         $wantExe = ([string]$m.exe_sha256 -split '\s+')[0].ToUpperInvariant()
         if ($wantExe -ne $gotExe) { Fail "exe SHA-256 不匹配：期望 $wantExe 实际 $gotExe" }
         Write-Host 'UPDATE: OK exe-sha256'
@@ -208,6 +232,7 @@ try {
         } catch { }
     }
     if ($wasRunning) { Start-Sleep -Milliseconds 900 }
+    Trace "STOPPED wasRunning=$wasRunning"
 
     $backup = Join-Path $tmp 'backup'
     New-Item -ItemType Directory -Force -Path $backup | Out-Null
@@ -236,11 +261,14 @@ try {
     }
 
     $newVersion = Get-VersionFile (Join-Path $install 'VERSION.txt')
+    Trace "COPIED version=$newVersion files=$($updated.Count)"
     Write-Host "UPDATE: OK installed=$newVersion files=$($updated.Count)" -ForegroundColor Green
     if ($wasRunning -and -not $NoRestart) {
+        Trace 'RESTART'
         Start-Process -FilePath $exePath -WorkingDirectory $install | Out-Null
         Write-Host 'UPDATE: OK restarted'
     }
+    Trace 'DONE'
 }
 finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
