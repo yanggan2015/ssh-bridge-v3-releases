@@ -1,4 +1,4 @@
-# update.ps1 — ssh-bridge v3 独立更新器（白名单替换，不碰配置/工作目录/日志）
+﻿# update.ps1 — ssh-bridge v3 独立更新器（白名单替换，不碰配置/工作目录/日志）
 # 用法：
 #   powershell -NoProfile -File tools\update.ps1 [-Manifest <UPDATE.json 的 http(s) 地址或本地路径>] [-CheckOnly] [-NoRestart]
 #
