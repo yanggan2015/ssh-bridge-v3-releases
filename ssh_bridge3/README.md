@@ -1,4 +1,4 @@
-# ssh-bridge v3 · 3.0-s13-r12（完整扩展：入站 SSH + Web 控制台 + TCP 转发/隧道/发现 + 自更新）
+# ssh-bridge v3 · 3.0-s13-r13（完整扩展：入站 SSH + Web 控制台 + TCP 转发/隧道/发现 + 自更新）
 
 原生 Win32 单进程桌面工具：串口 / SSH / 日志共用一个环形缓冲，界面直读内存；
 另带一条**只在本机**的 HTTP 桥，让 AI（或脚本）像操作 DOM 一样读写每一个控件。
@@ -6,7 +6,10 @@
 > 源码仓库：<https://github.com/yanggan2015/ssh-bridge-v3>  
 > 二进制发布仓库：<https://github.com/yanggan2015/ssh-bridge-v3-releases>
 
-## 3.0-s13-r12 新增
+## 3.0-s13-r13 新增
+
+- **Web 板控单队列**：`/action` 不再为每次动作起 `std::async`，统一进一个后台队列，串口动作严格串行；结果通过 `MG_EV_WAKEUP` 回写，`/job` 轮询保持兼容。
+- **Web 页面资产拆分**：CSS、JS 和 10 页页面主体拆到 `src/services/web/web_pages.cpp`，`web_console.cpp` 只保留 HTTP/WS/队列核心。
 
 - **SSH 入站共享网关**：`inbound_ssh.enable=true` 后 `ssh -p 2222 <通道名>@<主机>`，外部会话直接读写该通道同一终端。
 - **Web 控制台**：`web.enable=true` 时单端口 HTTP + WebSocket，10 个页面、token 鉴权、配置表单保存后热重载。
