@@ -202,20 +202,20 @@ try {
     $zipIsUrl = $zipRef -match '^https?://'
     $localZip = ''
     $zipCandidates = [System.Collections.Generic.List[string]]::new()
-    if ($zipIsUrl) {
-        $zipCandidates.Add($zipRef) | Out-Null
-    } elseif ($isHttp) {
-        $rel = [Uri]::new([Uri]$manifestUri, $zipRef)
-        if ($rel.Scheme -notin @('http', 'https')) { Fail "不支持的下载协议：$($rel.Scheme)" }
-        $zipCandidates.Add($rel.AbsoluteUri) | Out-Null
-    } else {
-        $localZip = if ([System.IO.Path]::IsPathRooted($zipRef)) { $zipRef } else { Join-Path $manifestDir $zipRef }
-        if (-not (Test-Path -LiteralPath $localZip)) { Fail "更新包不存在：$localZip" }
-    }
-    # raw.githubusercontent.com 偶发 reset/截断；清单里的 github_url 是同一 Release 资产的备用直链。
+    # GitHub Release 资产是固定直链，优先于 raw 分支；raw 在部分网络会 reset/截断。
     if ($m.github_url) {
         $gh = [string]$m.github_url
         if ($gh -match '^https?://' -and -not $zipCandidates.Contains($gh)) { $zipCandidates.Add($gh) | Out-Null }
+    }
+    if ($zipIsUrl) {
+        if (-not $zipCandidates.Contains($zipRef)) { $zipCandidates.Add($zipRef) | Out-Null }
+    } elseif ($isHttp) {
+        $rel = [Uri]::new([Uri]$manifestUri, $zipRef)
+        if ($rel.Scheme -notin @('http', 'https')) { Fail "不支持的下载协议：$($rel.Scheme)" }
+        if (-not $zipCandidates.Contains($rel.AbsoluteUri)) { $zipCandidates.Add($rel.AbsoluteUri) | Out-Null }
+    } else {
+        $localZip = if ([System.IO.Path]::IsPathRooted($zipRef)) { $zipRef } else { Join-Path $manifestDir $zipRef }
+        if (-not (Test-Path -LiteralPath $localZip)) { Fail "更新包不存在：$localZip" }
     }
     $zipPath = Join-Path $tmp 'package.zip'
     $wantZip = ([string]$m.sha256 -split '\s+')[0].ToUpperInvariant()
