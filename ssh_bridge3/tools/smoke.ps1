@@ -1,4 +1,4 @@
-# dist-smoke.ps1 — 解压后自检（冒烟，不改代码、不依赖仓库）
+﻿# dist-smoke.ps1 — 解压后自检（冒烟，不改代码、不依赖仓库）
 # 用法： pwsh -NoProfile -File tools\smoke.ps1 [-Exe .\ssh_bridge3.exe] [-Port 18086]
 #
 # 做四件事：起进程 → /ping + /ui-tree 确认控件在册 → 驱动输入/搜索/分屏 → 退出关端口

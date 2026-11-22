@@ -1,10 +1,19 @@
-# ssh-bridge v3 · 3.0-s13-r11（底部快捷指令条 + 左侧文件页：共享目录浏览 + SSH 转 SFTP）
+# ssh-bridge v3 · 3.0-s13-r12（完整扩展：入站 SSH + Web 控制台 + TCP 转发/隧道/发现 + 自更新）
 
 原生 Win32 单进程桌面工具：串口 / SSH / 日志共用一个环形缓冲，界面直读内存；
 另带一条**只在本机**的 HTTP 桥，让 AI（或脚本）像操作 DOM 一样读写每一个控件。
 
 > 源码仓库：<https://github.com/yanggan2015/ssh-bridge-v3>  
 > 二进制发布仓库：<https://github.com/yanggan2015/ssh-bridge-v3-releases>
+
+## 3.0-s13-r12 新增
+
+- **SSH 入站共享网关**：`inbound_ssh.enable=true` 后 `ssh -p 2222 <通道名>@<主机>`，外部会话直接读写该通道同一终端。
+- **Web 控制台**：`web.enable=true` 时单端口 HTTP + WebSocket，10 个页面、token 鉴权、配置表单保存后热重载。
+- **TCP 转发**：`tcp_forward.enable=true` 一次监听 256 口，`22000+板 IP 末段` 转发到目标板 22。
+- **外网隧道**：`tunnel.enable=true` 拉起 `eadk-tunnel` / `frpc`，映射 Web 18xxx 与入站 SSH 28xxx，断线自动重启。
+- **UDP 发现**：`discovery.enable=true` 在 18071 应答 `EADK1 q`，只返回标记 `discoverable` 的通道。
+- **自更新**：帮助 → 检查更新，zip/exe 双 SHA-256 校验、白名单替换、失败回滚、更新后重启。
 
 ## 一分钟上手
 
