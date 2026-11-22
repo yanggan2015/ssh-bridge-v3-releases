@@ -1,4 +1,4 @@
-# ssh-bridge v3 · 3.0-s13-r4（独立发布仓库 + 应用内升级 + 分屏布局持久化）
+# ssh-bridge v3 · 3.0-s13-r5（独立发布仓库 + 应用内升级 + 分屏布局持久化）
 
 原生 Win32 单进程桌面工具：串口 / SSH / 日志共用一个环形缓冲，界面直读内存；
 另带一条**只在本机**的 HTTP 桥，让 AI（或脚本）像操作 DOM 一样读写每一个控件。
@@ -33,7 +33,8 @@ powershell -NoProfile -File tools\smoke.ps1
 
 `https://raw.githubusercontent.com/yanggan2015/ssh-bridge-v3-releases/windows_x86_64/UPDATE.json`
 
-检查到新版本后会自动下载 GitHub Release 资产、校验 zip 与 exe 的 SHA-256、停止旧进程、替换文件并重启。
+检查到新版本后会自动下载更新包、校验 zip 与 exe 的 SHA-256、停止旧进程、替换文件并重启。
+下载优先走清单里的 `url`（raw 分支），连续失败或完整性校验不过时自动切换到同一 Release 的 `github_url` 资产。
 配置、`work\`、`logs\`、`keys` 不会被改动。
 
 命令行方式：

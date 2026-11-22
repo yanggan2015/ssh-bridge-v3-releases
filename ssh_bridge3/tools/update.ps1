@@ -44,16 +44,8 @@ function FetchText([string]$uri) {
 }
 
 function FetchFile([string]$uri, [string]$outFile) {
-    for ($i = 1; $i -le 3; $i++) {
-        try {
-            Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $outFile -TimeoutSec 180
-            return
-        } catch {
-            if ($i -eq 3) { throw }
-            Write-Host "UPDATE: retry package ($i/3): $($_.Exception.Message)"
-            Start-Sleep -Seconds 2
-        }
-    }
+    # 重试与备用直链由调用侧的 zip 候选循环统一处理，这里只做一次尝试。
+    Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $outFile -TimeoutSec 180
 }
 
 function Get-VersionFile([string]$path) {
@@ -146,39 +138,62 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 try {
     $zipRef = if ($m.url) { [string]$m.url } else { [string]$m.zip }
     $zipIsUrl = $zipRef -match '^https?://'
-    if ($zipIsUrl -or $isHttp) {
-        $zipUri = if ($zipIsUrl) { [Uri]$zipRef } else { [Uri]::new([Uri]$Manifest, $zipRef) }
-        if ($zipUri.Scheme -notin @('http', 'https')) { Fail "不支持的下载协议：$($zipUri.Scheme)" }
-        $zipPath = Join-Path $tmp 'package.zip'
-        Trace "BEFORE_FETCH $($zipUri.AbsoluteUri)"
-        try {
-            FetchFile $zipUri.AbsoluteUri $zipPath
-        } catch { Fail "下载更新包失败：$($_.Exception.Message)" }
-        Trace "AFTER_FETCH size=$((Get-Item -LiteralPath $zipPath).Length)"
+    $localZip = ''
+    $zipCandidates = [System.Collections.Generic.List[string]]::new()
+    if ($zipIsUrl) {
+        $zipCandidates.Add($zipRef) | Out-Null
+    } elseif ($isHttp) {
+        $rel = [Uri]::new([Uri]$Manifest, $zipRef)
+        if ($rel.Scheme -notin @('http', 'https')) { Fail "不支持的下载协议：$($rel.Scheme)" }
+        $zipCandidates.Add($rel.AbsoluteUri) | Out-Null
     } else {
         $localZip = if ([System.IO.Path]::IsPathRooted($zipRef)) { $zipRef } else { Join-Path $manifestDir $zipRef }
         if (-not (Test-Path -LiteralPath $localZip)) { Fail "更新包不存在：$localZip" }
-        $zipPath = Join-Path $tmp 'package.zip'
-        Copy-Item -LiteralPath $localZip -Destination $zipPath -Force
     }
-
+    # raw.githubusercontent.com 偶发 reset/截断；清单里的 github_url 是同一 Release 资产的备用直链。
+    if ($m.github_url) {
+        $gh = [string]$m.github_url
+        if ($gh -match '^https?://' -and -not $zipCandidates.Contains($gh)) { $zipCandidates.Add($gh) | Out-Null }
+    }
+    $zipPath = Join-Path $tmp 'package.zip'
     $wantZip = ([string]$m.sha256 -split '\s+')[0].ToUpperInvariant()
     $wantSize = if ($m.size_bytes) { [int64]$m.size_bytes } else { 0 }
     $zipOk = $false
-    Trace "ZIP_SHA_BEGIN want=$wantZip size=$wantSize"
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
-        if ($attempt -gt 1 -and $zipUri) {
-            Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
-            try { FetchFile $zipUri.AbsoluteUri $zipPath } catch { Fail "下载更新包失败：$($_.Exception.Message)" }
-        }
+    if ($localZip) {
+        Copy-Item -LiteralPath $localZip -Destination $zipPath -Force
         $gotSize = (Get-Item -LiteralPath $zipPath).Length
         $gotZip = Get-Sha256 $zipPath
         if (($wantSize -eq 0 -or $gotSize -eq $wantSize) -and $wantZip -eq $gotZip) {
             $zipOk = $true
-            break
+            Trace "LOCAL_ZIP_OK $localZip"
         }
-        Write-Host "UPDATE: zip integrity retry ($attempt/3) size=$gotSize expect=$wantSize sha=$gotZip"
-        Start-Sleep -Seconds 2
+    }
+
+    Trace "ZIP_SHA_BEGIN want=$wantZip size=$wantSize candidates=$($zipCandidates.Count)"
+    foreach ($candidate in $zipCandidates) {
+        if ($zipOk) { break }
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            if ($attempt -gt 1) { Remove-Item -Force $zipPath -ErrorAction SilentlyContinue }
+            Trace "BEFORE_FETCH $candidate try=$attempt"
+            try {
+                FetchFile $candidate $zipPath
+            } catch {
+                Write-Host "UPDATE: fetch retry ($attempt/3): $($_.Exception.Message)"
+                Trace "FETCH_FAIL $candidate try=$attempt $($_.Exception.Message)"
+                if ($attempt -lt 3) { Start-Sleep -Seconds 2 }
+                continue
+            }
+            Trace "AFTER_FETCH size=$((Get-Item -LiteralPath $zipPath).Length) candidate=$candidate"
+            $gotSize = (Get-Item -LiteralPath $zipPath).Length
+            $gotZip = Get-Sha256 $zipPath
+            if (($wantSize -eq 0 -or $gotSize -eq $wantSize) -and $wantZip -eq $gotZip) {
+                $zipOk = $true
+                break
+            }
+            Write-Host "UPDATE: zip integrity retry ($attempt/3) size=$gotSize expect=$wantSize sha=$gotZip"
+            Trace "ZIP_BAD $candidate try=$attempt size=$gotSize sha=$gotZip"
+            Start-Sleep -Seconds 2
+        }
     }
     if (-not $zipOk) { Fail "zip SHA-256/大小校验失败：期望 $wantZip" }
     Write-Host 'UPDATE: OK zip-sha256'
