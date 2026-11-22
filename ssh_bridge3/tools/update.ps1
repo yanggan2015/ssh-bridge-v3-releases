@@ -66,25 +66,44 @@ function Get-VersionFile([string]$path) {
     return '0.0.0'
 }
 
+function Compare-Token([string]$x, [string]$y) {
+    if ($x -eq $y) { return 0 }
+    $mx = [regex]::Match($x, '^([A-Za-z]*)(\d+)$')
+    $my = [regex]::Match($y, '^([A-Za-z]*)(\d+)$')
+    if ($mx.Success -and $my.Success) {
+        $px = $mx.Groups[1].Value
+        $py = $my.Groups[1].Value
+        $c = [string]::CompareOrdinal($px, $py)
+        if ($c -ne 0) { return [Math]::Sign($c) }
+        $nx = [int64]$mx.Groups[2].Value
+        $ny = [int64]$my.Groups[2].Value
+        if ($nx -gt $ny) { return 1 }
+        if ($nx -lt $ny) { return -1 }
+        return 0
+    }
+    return [Math]::Sign([string]::CompareOrdinal($x, $y))
+}
+
 function Compare-Ver([string]$a, [string]$b) {
     $a = $a.Trim().TrimStart('v', 'V')
     $b = $b.Trim().TrimStart('v', 'V')
-    $aParts = $a -split '-', 2
-    $bParts = $b -split '-', 2
+    $aParts = $a -split '-'
+    $bParts = $b -split '-'
     $aBase = $aParts[0]
     $bBase = $bParts[0]
     try { $av = [version]$aBase } catch { $av = [version]'0.0.0' }
     try { $bv = [version]$bBase } catch { $bv = [version]'0.0.0' }
     if ($av -gt $bv) { return 1 }
     if ($av -lt $bv) { return -1 }
-    $as = if ($aParts.Count -gt 1) { $aParts[1] } else { '' }
-    $bs = if ($bParts.Count -gt 1) { $bParts[1] } else { '' }
-    if ($as -eq $bs) { return 0 }
-    if ($as -eq '') { return 1 }
-    if ($bs -eq '') { return -1 }
-    $c = [string]::CompareOrdinal($as, $bs)
-    if ($c -gt 0) { return 1 }
-    if ($c -lt 0) { return -1 }
+    $n = [Math]::Max($aParts.Count, $bParts.Count)
+    for ($i = 1; $i -lt $n; $i++) {
+        $as = if ($i -lt $aParts.Count) { [string]$aParts[$i] } else { '' }
+        $bs = if ($i -lt $bParts.Count) { [string]$bParts[$i] } else { '' }
+        if ($as -eq '') { return -1 }
+        if ($bs -eq '') { return 1 }
+        $c = Compare-Token $as $bs
+        if ($c -ne 0) { return $c }
+    }
     return 0
 }
 
