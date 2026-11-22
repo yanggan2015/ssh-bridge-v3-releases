@@ -1,15 +1,15 @@
 {
   "product": "ssh-bridge v3",
-  "version": "3.0-s13-r5",
+  "version": "3.0-s13-r6",
   "platform": "windows",
   "arch": "x86_64",
   "branch": "windows_x86_64",
-  "zip": "ssh-bridge-v3-3.0-s13-r5-win64.zip",
-  "url": "https://raw.githubusercontent.com/yanggan2015/ssh-bridge-v3-releases/windows_x86_64/packages/ssh-bridge-v3-3.0-s13-r5-win64.zip",
-  "github_url": "https://github.com/yanggan2015/ssh-bridge-v3-releases/releases/download/v3.0-s13-r5/ssh-bridge-v3-3.0-s13-r5-win64.zip",
-  "sha256": "DA636D787B4CE2429D4D0C2F9209051C3F16EC5F4A0D67C0EED94EA9597F7B41",
-  "size_bytes": 4159231,
-  "exe_sha256": "AB904DACB4D8293CAEF89F4DF03203C54EFA2E4FC33C31DEA97D8F51178A991C",
-  "built_utc": "2026-11-22T00:58:43Z",
+  "zip": "ssh-bridge-v3-3.0-s13-r6-win64.zip",
+  "url": "https://raw.githubusercontent.com/yanggan2015/ssh-bridge-v3-releases/windows_x86_64/packages/ssh-bridge-v3-3.0-s13-r6-win64.zip",
+  "github_url": "https://github.com/yanggan2015/ssh-bridge-v3-releases/releases/download/v3.0-s13-r6/ssh-bridge-v3-3.0-s13-r6-win64.zip",
+  "sha256": "A7793FFAF07864D35B3413707F5DF68287E91BB9C6A4F0DBAFBDA06F8F2032C6",
+  "size_bytes": 4160196,
+  "exe_sha256": "95E33541C5F1F114A33D79E312CBA512010B61BE10B902E9B0390DE10832C99B",
+  "built_utc": "2026-11-22T01:24:18Z",
   "source": "https://github.com/yanggan2015/ssh-bridge-v3"
 }
