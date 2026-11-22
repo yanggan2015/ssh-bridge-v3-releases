@@ -14,10 +14,14 @@
 
 param(
     [string]$Manifest = 'https://raw.githubusercontent.com/yanggan2015/ssh-bridge-v3-releases/windows_x86_64/UPDATE.json',
+    [string]$ManifestFallback = '',
     [string]$InstallDir = '',
     [switch]$CheckOnly,
     [switch]$NoRestart
 )
+
+$DefaultManifest = 'https://raw.githubusercontent.com/yanggan2015/ssh-bridge-v3-releases/windows_x86_64/UPDATE.json'
+$LatestReleaseManifest = 'https://github.com/yanggan2015/ssh-bridge-v3-releases/releases/latest/download/UPDATE.json'
 
 $here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 if (-not $InstallDir) { $InstallDir = Join-Path $here '..' }
@@ -31,16 +35,22 @@ function Fail([string]$msg) {
     exit 1
 }
 
-function FetchText([string]$uri) {
+function TryFetchText([string]$uri) {
     for ($i = 1; $i -le 3; $i++) {
         try {
-            return (Invoke-WebRequest -UseBasicParsing -Uri $uri -TimeoutSec 60).Content
+            $resp = Invoke-WebRequest -UseBasicParsing -Uri $uri -TimeoutSec 60
+            $body = $resp.Content
+            if ($body -is [byte[]]) { return [Text.Encoding]::UTF8.GetString($body) }
+            return [string]$body
         } catch {
-            if ($i -eq 3) { throw }
-            Write-Host "UPDATE: retry manifest ($i/3): $($_.Exception.Message)"
-            Start-Sleep -Seconds 2
+            if ($i -lt 3) {
+                Write-Host "UPDATE: retry manifest ($i/3): $($_.Exception.Message)"
+                Start-Sleep -Seconds 2
+            }
         }
     }
+    Write-Host "UPDATE: manifest source failed: $uri"
+    return $null
 }
 
 function FetchFile([string]$uri, [string]$outFile) {
@@ -105,10 +115,41 @@ trap { Trace "TRAP $_"; exit 1 }
 
 $isHttp = $Manifest -match '^https?://'
 $manifestDir = ''
+$manifestUri = $Manifest
+$m = $null
+$text = $null
 if ($isHttp) {
-    try {
-        $text = FetchText $Manifest
-    } catch { Fail "下载清单失败：$($_.Exception.Message)" }
+    $manifestCandidates = [System.Collections.Generic.List[string]]::new()
+    foreach ($u in @($Manifest, $ManifestFallback)) {
+        if ($u -and $u -match '^https?://' -and -not $manifestCandidates.Contains($u)) {
+            $manifestCandidates.Add($u) | Out-Null
+        }
+    }
+    # 默认 raw 清单失败时，退到最新 Release 上的稳定 UPDATE.json 资产。
+    if ($Manifest -eq $DefaultManifest -and -not $manifestCandidates.Contains($LatestReleaseManifest)) {
+        $manifestCandidates.Add($LatestReleaseManifest) | Out-Null
+    }
+    Trace "MANIFEST_CANDIDATES=$($manifestCandidates -join ',')"
+    foreach ($candidate in $manifestCandidates) {
+        $candidateText = TryFetchText $candidate
+        if (-not $candidateText) { continue }
+        $candidateObj = $null
+        try { $candidateObj = $candidateText | ConvertFrom-Json } catch {
+            Write-Host "UPDATE: manifest JSON invalid: $candidate"
+            continue
+        }
+        if (-not $candidateObj.version -or (-not $candidateObj.zip -and -not $candidateObj.url) -or -not $candidateObj.sha256) {
+            Write-Host "UPDATE: manifest fields missing: $candidate"
+            continue
+        }
+        $text = $candidateText
+        $m = $candidateObj
+        $manifestUri = $candidate
+        Trace "MANIFEST_OK $candidate version=$($m.version)"
+        Write-Host "UPDATE: manifest=$candidate"
+        break
+    }
+    if (-not $m) { Fail "下载清单失败：已尝试 $($manifestCandidates.Count) 个来源" }
 } else {
     if (-not (Test-Path -LiteralPath $Manifest)) { Fail "清单不存在：$Manifest" }
     $manifestPath = (Resolve-Path -LiteralPath $Manifest).Path
@@ -116,7 +157,9 @@ if ($isHttp) {
     $text = Get-Content -LiteralPath $manifestPath -Raw
 }
 
-try { $m = $text | ConvertFrom-Json } catch { Fail '清单不是合法 JSON' }
+if (-not $m) {
+    try { $m = $text | ConvertFrom-Json } catch { Fail '清单不是合法 JSON' }
+}
 if (-not $m.version -or (-not $m.zip -and -not $m.url) -or -not $m.sha256) {
     Fail '清单缺少 version / (zip 或 url) / sha256'
 }
@@ -143,7 +186,7 @@ try {
     if ($zipIsUrl) {
         $zipCandidates.Add($zipRef) | Out-Null
     } elseif ($isHttp) {
-        $rel = [Uri]::new([Uri]$Manifest, $zipRef)
+        $rel = [Uri]::new([Uri]$manifestUri, $zipRef)
         if ($rel.Scheme -notin @('http', 'https')) { Fail "不支持的下载协议：$($rel.Scheme)" }
         $zipCandidates.Add($rel.AbsoluteUri) | Out-Null
     } else {

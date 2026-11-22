@@ -1,4 +1,4 @@
-# ssh-bridge v3 · 3.0-s13-r6（响应式窄窗 + 独立发布仓库 + 应用内升级 + 分屏布局持久化）
+# ssh-bridge v3 · 3.0-s13-r7（更新器清单兜底 + 响应式窄窗 + 独立发布仓库 + 应用内升级）
 
 原生 Win32 单进程桌面工具：串口 / SSH / 日志共用一个环形缓冲，界面直读内存；
 另带一条**只在本机**的 HTTP 桥，让 AI（或脚本）像操作 DOM 一样读写每一个控件。
@@ -26,6 +26,7 @@ powershell -NoProfile -File tools\smoke.ps1
 - `ssh-bridge-v3-<版本>-win64.zip`：更新包本体。
 - `ssh-bridge-v3-<版本>-win64.UPDATE.json`：本地版本清单，含 zip 与 exe 的 SHA-256。
 - `ssh-bridge-v3-<版本>-win64.zip.sha256`：zip 校验文件。
+- `UPDATE.json`：每个 Release 都额外挂一份固定名清单，供 raw 清单失败时兜底。
 
 应用内升级：
 
@@ -34,6 +35,7 @@ powershell -NoProfile -File tools\smoke.ps1
 `https://raw.githubusercontent.com/yanggan2015/ssh-bridge-v3-releases/windows_x86_64/UPDATE.json`
 
 检查到新版本后会自动下载更新包、校验 zip 与 exe 的 SHA-256、停止旧进程、替换文件并重启。
+清单本身连续失败时，自动改用最新 Release 的 `releases/latest/download/UPDATE.json`；
 下载优先走清单里的 `url`（raw 分支），连续失败或完整性校验不过时自动切换到同一 Release 的 `github_url` 资产。
 配置、`work\`、`logs\`、`keys` 不会被改动。
 
@@ -236,8 +238,8 @@ Invoke-RestMethod "$b/action" -Method Post -ContentType 'application/json' `
 | loop1 / s6loop2 | 回环 | `loop:ai`，无硬件也能看回显 |
 | ztl | 串口 | COM3 @1500000 |
 | ok3568 | 串口 | COM5 @115200（密码已清空，请自行填写） |
-| ssh-link-demo1 | SSH | 39.97.234.200:52222 demo/123456 |
-| ssh-link-demo2 | SSH | sshbridge.online:52223 demo/123456 |
+| ssh-link-demo1 | SSH | 192.0.2.10:22 demo/CHANGE_ME（占位，请替换为自己的主机与凭据） |
+| ssh-link-demo2 | SSH | 198.51.100.10:22 demo/CHANGE_ME（占位，请替换为自己的主机与凭据） |
 
 ## 继电器与板控按钮（S12）
 
